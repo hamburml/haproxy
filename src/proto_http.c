@@ -113,31 +113,13 @@ const char *HTTP_308 =
 	"Content-length: 0\r\n"
 	"Location: "; /* not terminated since it will be concatenated with the URL */
 
-/* Warning: this one is an sprintf() fmt string, with <realm> as its only argument */
-const char *HTTP_401_fmt =
-	"HTTP/1.0 401 Unauthorized\r\n"
-	"Cache-Control: no-cache\r\n"
-	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"WWW-Authenticate: Basic realm=\"%s\"\r\n"
-	"\r\n"
-	"<html><body><h1>401 Unauthorized</h1>\nYou need a valid user and password to access this content.\n</body></html>\n";
-
-const char *HTTP_407_fmt =
-	"HTTP/1.0 407 Unauthorized\r\n"
-	"Cache-Control: no-cache\r\n"
-	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"Proxy-Authenticate: Basic realm=\"%s\"\r\n"
-	"\r\n"
-	"<html><body><h1>407 Unauthorized</h1>\nYou need a valid user and password to access this content.\n</body></html>\n";
-
-
 const int http_err_codes[HTTP_ERR_SIZE] = {
 	[HTTP_ERR_200] = 200,  /* used by "monitor-uri" */
 	[HTTP_ERR_400] = 400,
+	[HTTP_ERR_401] = 401,
 	[HTTP_ERR_403] = 403,
 	[HTTP_ERR_405] = 405,
+	[HTTP_ERR_407] = 407,
 	[HTTP_ERR_408] = 408,
 	[HTTP_ERR_429] = 429,
 	[HTTP_ERR_500] = 500,
@@ -146,48 +128,118 @@ const int http_err_codes[HTTP_ERR_SIZE] = {
 	[HTTP_ERR_504] = 504,
 };
 
-static const char *http_err_msgs[HTTP_ERR_SIZE] = {
+static const char *http_err_msgs_hdr[HTTP_ERR_SIZE] = {
 	[HTTP_ERR_200] =
 	"HTTP/1.0 200 OK\r\n"
 	"Cache-Control: no-cache\r\n"
 	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"\r\n"
-	"<html><body><h1>200 OK</h1>\nService ready.\n</body></html>\n",
+	"Content-Type: text/html\r\n",
 
 	[HTTP_ERR_400] =
 	"HTTP/1.0 400 Bad request\r\n"
 	"Cache-Control: no-cache\r\n"
 	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"\r\n"
-	"<html><body><h1>400 Bad request</h1>\nYour browser sent an invalid request.\n</body></html>\n",
+	"Content-Type: text/html\r\n",
+	
+	[HTTP_ERR_401] =
+	"HTTP/1.0 401 Unauthorized\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
 
 	[HTTP_ERR_403] =
 	"HTTP/1.0 403 Forbidden\r\n"
 	"Cache-Control: no-cache\r\n"
 	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"\r\n"
-	"<html><body><h1>403 Forbidden</h1>\nRequest forbidden by administrative rules.\n</body></html>\n",
+	"Content-Type: text/html\r\n",
 
 	[HTTP_ERR_405] =
 	"HTTP/1.0 405 Method Not Allowed\r\n"
 	"Cache-Control: no-cache\r\n"
 	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"\r\n"
-	"<html><body><h1>405 Method Not Allowed</h1>\nA request was made of a resource using a request method not supported by that resource\n</body></html>\n",
+	"Content-Type: text/html\r\n",
+	
+	[HTTP_ERR_407] =
+	"HTTP/1.0 407 Unauthorized\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
 
 	[HTTP_ERR_408] =
 	"HTTP/1.0 408 Request Time-out\r\n"
 	"Cache-Control: no-cache\r\n"
 	"Connection: close\r\n"
-	"Content-Type: text/html\r\n"
-	"\r\n"
+	"Content-Type: text/html\r\n",
+
+	[HTTP_ERR_429] =
+	"HTTP/1.0 429 Too Many Requests\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
+
+	[HTTP_ERR_500] =
+	"HTTP/1.0 500 Internal Server Error\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
+
+	[HTTP_ERR_502] =
+	"HTTP/1.0 502 Bad Gateway\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
+
+	[HTTP_ERR_503] =
+	"HTTP/1.0 503 Service Unavailable\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
+
+	[HTTP_ERR_504] =
+	"HTTP/1.0 504 Gateway Time-out\r\n"
+	"Cache-Control: no-cache\r\n"
+	"Connection: close\r\n"
+	"Content-Type: text/html\r\n",
+};
+
+static const char *http_err_msgs_body[HTTP_ERR_SIZE] = {
+	[HTTP_ERR_200] =
+	"<html><body><h1>200 OK</h1>\nService ready.\n</body></html>\n",
+
+	[HTTP_ERR_400] =
+	"<html><body><h1>400 Bad request</h1>\nYour browser sent an invalid request.\n</body></html>\n",
+	
+	[HTTP_ERR_401] =
+	"<html><body><h1>401 Unauthorized</h1>\nYou need a valid user and password to access this content.\n</body></html>\n",
+
+	[HTTP_ERR_403] =
+	"<html><body><h1>403 Forbidden</h1>\nRequest forbidden by administrative rules.\n</body></html>\n",
+
+	[HTTP_ERR_405] =
+	"<html><body><h1>405 Method Not Allowed</h1>\nA request was made of a resource using a request method not supported by that resource\n</body></html>\n",
+	
+	[HTTP_ERR_407] =
+	"<html><body><h1>407 Unauthorized</h1>\nYou need a valid user and password to access this content.\n</body></html>\n",
+
+	[HTTP_ERR_408] =
 	"<html><body><h1>408 Request Time-out</h1>\nYour browser didn't send a complete request in time.\n</body></html>\n",
 
 	[HTTP_ERR_429] =
+	"<html><body><h1>429 Too Many Requests</h1>\nYou have sent too many requests in a given amount of time.\n</body></html>\n",
+
+	[HTTP_ERR_500] =
+	"<html><body><h1>500 Internal Server Error</h1>\nAn internal server error occured.\n</body></html>\n",
+
+	[HTTP_ERR_502] =
+	"<html><body><h1>502 Bad Gateway</h1>\nThe server returned an invalid or incomplete response.\n</body></html>\n",
+
+	[HTTP_ERR_503] =
+	"<html><body><h1>503 Service Unavailable</h1>\nNo server is available to handle this request.\n</body></html>\n",
+
+	[HTTP_ERR_504] =
+	"<html><body><h1>504 Gateway Time-out</h1>\nThe server didn't respond in time.\n</body></html>\n",
+};
+
 	"HTTP/1.0 429 Too Many Requests\r\n"
 	"Cache-Control: no-cache\r\n"
 	"Connection: close\r\n"
@@ -254,7 +306,7 @@ struct action_kw_list http_res_keywords = {
 /* We must put the messages here since GCC cannot initialize consts depending
  * on strlen().
  */
-struct chunk http_err_chunks[HTTP_ERR_SIZE];
+struct err_hdr_body http_err_chunks[HTTP_ERR_SIZE];
 
 /* this struct is used between calls to smp_fetch_hdr() or smp_fetch_cookie() */
 static struct hdr_ctx static_hdr_ctx;
@@ -366,6 +418,10 @@ const char *get_reason(unsigned int status)
 	}
 }
 
+/*
+ * This function checks if for all possible http status errors corresponding headers and bodies are found. 
+ * It also concats header and body together, adds \r\n between them and fills http_err_chunks[msgId].str and http_err_chunks[msgId].len.
+ */
 void init_proto_http()
 {
 	int i;
@@ -373,13 +429,22 @@ void init_proto_http()
 	int msg;
 
 	for (msg = 0; msg < HTTP_ERR_SIZE; msg++) {
-		if (!http_err_msgs[msg]) {
-			Alert("Internal error: no message defined for HTTP return code %d. Aborting.\n", msg);
+		if (!http_err_msgs_hdr[msg]) {
+			Alert("Internal error: no message header defined for HTTP return code %d. Aborting.\n", msg);
 			abort();
 		}
 
-		http_err_chunks[msg].str = (char *)http_err_msgs[msg];
-		http_err_chunks[msg].len = strlen(http_err_msgs[msg]);
+		if (!http_err_msgs_body[msg]) {
+			Alert("Internal error: no message body defined for HTTP return code %d. Aborting.\n", msg);
+			abort();
+		}
+
+		http_err_chunks[msg].hdr->str = (char *)http_err_msgs_hdr[msg];
+		http_err_chunks[msg].hdr->len = strlen(http_err_msgs_hdr[msg]);
+
+		http_err_chunks[msg].body->str = (char *)http_err_msgs_body[msg];
+		http_err_chunks[msg].body->len = strlen(http_err_msgs_body[msg]);
+
 	}
 
 	/* initialize the log header encoding map : '{|}"#' should be encoded with
@@ -1044,7 +1109,7 @@ static void http_server_error(struct stream *s, struct stream_interface *si,
 /* This function returns the appropriate error location for the given stream
  * and message.
  */
-
+// TODO: http_error_message is concatination of http_err_chunks[msgnum].hdr + "\r\n" + http_err_chunks[msgnum].body
 struct chunk *http_error_message(struct stream *s, int msgnum)
 {
 	if (s->be->errmsg[msgnum].str)
@@ -3482,9 +3547,15 @@ resume_execution:
 			 * count one error, because normal browsing won't significantly
 			 * increase the counter but brute force attempts will.
 			 */
-			chunk_printf(&trash, (txn->flags & TX_USE_PX_CONN) ? HTTP_407_fmt : HTTP_401_fmt, auth_realm);
-			txn->status = (txn->flags & TX_USE_PX_CONN) ? 407 : 401;
-			http_reply_and_close(s, txn->status, &trash);
+			//chunk_printf(&trash, (txn->flags & TX_USE_PX_CONN) ? (const char *)http_error_message(s, HTTP_ERR_401)->str : (const char *)http_error_message(s, HTTP_ERR_401)->str, auth_realm);
+			if (txn->flags & TX_USE_PX_CONN) == 407 {
+				txn->status = 407;
+				http_reply_and_close(s, txn->status, http_error_message(s, HTTP_ERR_407));
+			} else 
+			{
+				txn->status = 401;
+				http_reply_and_close(s, txn->status, http_error_message(s, HTTP_ERR_401));
+			}
 			stream_inc_http_err_ctr(s);
 			return HTTP_RULE_RES_ABRT;
 
